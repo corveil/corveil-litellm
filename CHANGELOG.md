@@ -11,7 +11,15 @@ First release on PyPI: `pip install corveil-litellm`.
   `callbacks: ["corveil_litellm.handler"]`.
 - Needs LiteLLM 1.94.0 or later when installed with pip. The single file still
   works next to `config.yaml` on older releases.
-- No change in what is sent from 0.4.0.
+
+### Fixed
+
+- A conversation on a model missing from LiteLLM's price map could show a cost
+  of $0. LiteLLM usually flags a missing price, but for some retired models
+  (such as `claude-sonnet-4-20250514` in recent LiteLLM releases) it reports 0
+  without saying so. A cost of 0 now counts only for a model the price map
+  lists, so those conversations show tokens and no cost. A model listed as
+  free still shows $0.
 
 ## 0.4.0
 
