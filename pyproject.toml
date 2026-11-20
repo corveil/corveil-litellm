@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.26"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -8,8 +8,8 @@ dynamic = ["version"]
 description = "LiteLLM proxy callback that sends each conversation to Corveil."
 readme = "README.md"
 requires-python = ">=3.10"
-# LICENSE: chosen by the maintainers before the first release. The release
-# workflow refuses to publish without a LICENSE file and a license field here.
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Corveil, Inc." }]
 keywords = ["litellm", "callback", "corveil", "llm", "proxy", "observability"]
 classifiers = [

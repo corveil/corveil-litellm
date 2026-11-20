@@ -183,3 +183,7 @@ through a PyPI trusted publisher, so no PyPI token is stored. To release X.Y.Z:
 2. Tag the merge commit `vX.Y.Z` and push the tag. The workflow runs the tests,
    checks the tag, code and changelog agree, publishes to PyPI and creates the
    GitHub release with the wheel, the sdist and `corveil_litellm.py`.
+
+## License
+
+[Apache License 2.0](https://github.com/corveil/corveil-litellm/blob/main/LICENSE).
