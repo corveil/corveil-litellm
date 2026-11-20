@@ -51,7 +51,7 @@ The whole callback is one file:
 as `corveil_litellm.py` in the same folder as your `config.yaml`. With
 `docker-compose`, mount it next to the config. The config line is the same.
 This also works on LiteLLM releases older than 1.94.0, which only load a
-callback module from the config's folder.
+callback module from the config's folder; it has been tested back to 1.74.4.
 
 If both are present, LiteLLM loads the `corveil_litellm.py` next to the config,
 not the installed package.
