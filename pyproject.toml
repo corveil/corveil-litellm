@@ -47,6 +47,7 @@ packages = ["src/corveil_litellm"]
 include = [
   "src/corveil_litellm",
   "tests",
+  "/e2e/fake_upstream.py",  # the tests' stand-in for the Anthropic API
   "examples",
   "/README.md",
   "/CHANGELOG.md",

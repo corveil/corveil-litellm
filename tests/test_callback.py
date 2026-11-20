@@ -20,6 +20,7 @@ import re
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -286,6 +287,95 @@ def test_unpriced_model_reports_tokens_without_cost(kit):
     usage = kit._usage_record(s)
     assert usage["total_tokens"] > 0
     assert "cost" not in usage, usage
+
+
+# ---- /v1/messages through litellm's real Anthropic provider code ---------------
+# mock_response can't test cost on this route: litellm's mocked Messages reply
+# names a fixed model, and litellm prices that one, not the model asked for. So
+# these call e2e/fake_upstream.py, which answers as the Anthropic API would and
+# echoes the requested model, the way the proxy's /v1/messages reaches Anthropic.
+
+@pytest.fixture(scope="module")
+def anthropic_api():
+    from http.server import ThreadingHTTPServer
+    sys.path.insert(0, str(ROOT / "e2e"))
+    try:
+        import fake_upstream
+    finally:
+        sys.path.remove(str(ROOT / "e2e"))
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), fake_upstream.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+def messages_usage(kit, base: str, model: str) -> dict:
+    sid = f"pytest-messages-{model.rsplit('/', 1)[-1]}-{os.getpid()}"
+
+    async def main():
+        await litellm.anthropic.messages.acreate(
+            model=model, messages=[{"role": "user", "content": TURNS[0]}], max_tokens=64,
+            api_base=base, api_key="sk-ant-unused", litellm_session_id=sid, metadata=dict(METADATA))
+        s = await wait_for_calls(kit.handler, sid, 1)
+        kit.handler._flusher.cancel()
+        return s
+
+    return kit._usage_record(asyncio.run(main()))
+
+
+def _listed(model: str) -> bool:
+    return model in litellm.model_cost or model.split("/", 1)[1] in litellm.model_cost
+
+
+@pytest.mark.parametrize("model", [
+    "anthropic/claude-corveil-unmapped-test",
+    # Retired from litellm's price map in later releases. There, litellm prices
+    # it at 0 from zero prices of its own, without saying the price is missing.
+    "anthropic/claude-sonnet-4-20250514",
+])
+def test_messages_route_model_outside_the_price_map_has_no_cost(kit, anthropic_api, model):
+    if _listed(model):
+        pytest.skip(f"this litellm still prices {model}")
+    usage = messages_usage(kit, anthropic_api, model)
+    assert usage["total_tokens"] > 0
+    assert "cost" not in usage, usage
+
+
+def test_messages_route_priced_model_reports_cost(kit, anthropic_api):
+    usage = messages_usage(kit, anthropic_api, ANTHROPIC_MODEL)
+    assert usage.get("cost", 0) > 0, usage
+
+
+def test_a_model_the_price_map_lists_as_free_reports_zero_cost(kit, anthropic_api):
+    # A 0 from a model the price map lists (here, as an operator's config would
+    # register it) is a free call, not an unknown one.
+    model = "anthropic/corveil-free-test-model"
+    litellm.register_model({model: {"input_cost_per_token": 0.0, "output_cost_per_token": 0.0,
+                                    "litellm_provider": "anthropic", "mode": "chat"}})
+    try:
+        usage = messages_usage(kit, anthropic_api, model)
+    finally:
+        litellm.model_cost.pop(model, None)
+    assert usage["total_tokens"] > 0
+    assert usage.get("cost") == 0.0, usage
+
+
+def test_zero_cost_counts_only_for_a_model_the_price_map_lists(monkeypatch):
+    s = _session(calls=3)
+    # Listed and free: counts as $0.
+    corveil_litellm._add_usage(s, {"response_cost": 0.0, "model": "gpt-4o-mini", "custom_llm_provider": "openai"})
+    assert s["cost"] == 0.0
+    s = _session(calls=1)
+    # Not listed, and litellm said nothing about it: unknown.
+    corveil_litellm._add_usage(s, {"response_cost": 0.0, "model": "corveil-not-a-model", "custom_llm_provider": "anthropic"})
+    # get_model_info answering with zero prices of its own, for a key the map
+    # doesn't have (what litellm 1.110 does for claude-sonnet-4-20250514): unknown.
+    monkeypatch.setattr(litellm, "get_model_info", lambda **kw: {"key": "anthropic/corveil-synth", "input_cost_per_token": 0})
+    corveil_litellm._add_usage(s, {"response_cost": 0.0, "model": "corveil-synth", "custom_llm_provider": "anthropic"})
+    assert s["cost"] is None
+    # A positive cost never needs the price map.
+    corveil_litellm._add_usage(s, {"response_cost": 0.5, "model": "corveil-synth"})
+    assert s["cost"] == 0.5
 
 
 # ---- in a fresh interpreter: settings are read at import ---------------------

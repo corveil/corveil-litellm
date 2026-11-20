@@ -66,6 +66,7 @@ from urllib.parse import quote
 import logging
 
 import httpx
+import litellm
 from litellm.integrations.custom_logger import CustomLogger
 
 # Own logger, so these lines show up without turning on LiteLLM's debug logging.
@@ -166,6 +167,24 @@ def _count(v) -> int:
     return n if n > 0 else 0
 
 
+def _in_price_map(model, provider) -> bool:
+    """Whether LiteLLM's price map has its own entry for this model, so a cost of
+    0 from it means free. get_model_info can answer for a model the map doesn't
+    list (with zero prices), so its answer counts only if it names a map entry."""
+    if not model:
+        return False
+    try:
+        prices = litellm.model_cost
+        m = str(model)
+        keys = {m, m.split("/", 1)[-1]} | ({f"{provider}/{m}"} if provider else set())
+        if any(k in prices for k in keys):
+            return True
+        info = litellm.get_model_info(model=m, custom_llm_provider=provider or None)
+        return isinstance(info, dict) and info.get("key") in prices
+    except Exception:  # an unmapped model raises; any other failure also means "don't know"
+        return False
+
+
 def _add_usage(s: dict, slp: dict) -> None:
     """Add one request's tokens and cost, as LiteLLM computed them, to its conversation."""
     prompt, completion = _count(slp.get("prompt_tokens")), _count(slp.get("completion_tokens"))
@@ -173,11 +192,14 @@ def _add_usage(s: dict, slp: dict) -> None:
     s["completion_tokens"] += completion
     s["total_tokens"] += _count(slp.get("total_tokens")) or prompt + completion
     cost = slp.get("response_cost")
-    # LiteLLM reports 0.0 for a model it has no price for, and says why in
-    # response_cost_failure_debug_info. That is an unknown cost, not a free call.
+    # LiteLLM reports 0.0 for a model it has no price for. Usually it says why in
+    # response_cost_failure_debug_info, but not always: for some models it falls
+    # back to zero prices of its own. Either way that is an unknown cost, not a
+    # free call, so a 0 counts only for a model the price map lists.
     priced = not slp.get("response_cost_failure_debug_info")
     if priced and isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost >= 0 and cost == cost and cost != float("inf"):
-        s["cost"] = (s["cost"] or 0.0) + float(cost)  # stays None until some request reports a cost
+        if cost > 0 or _in_price_map(slp.get("model"), slp.get("custom_llm_provider")):
+            s["cost"] = (s["cost"] or 0.0) + float(cost)  # stays None until some request reports a cost
     model = slp.get("model")
     if model and str(model) not in s["models"] and len(s["models"]) < MAX_MODELS:
         s["models"].append(str(model))
