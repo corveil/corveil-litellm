@@ -1,0 +1,21 @@
+# LiteLLM proxy config for the end-to-end check. Both models point at
+# fake_upstream.py instead of Anthropic and OpenAI, so the proxy runs its real
+# provider code and no provider key is needed. The api_key values are
+# placeholders the fake upstream ignores.
+
+model_list:
+  - model_name: claude-e2e
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_base: http://fake-upstream:8090
+      api_key: sk-ant-unused
+  - model_name: gpt-e2e
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_base: http://fake-upstream:8090/v1
+      api_key: sk-unused
+
+# The two lines examples/config.example.yaml tells users to add.
+litellm_settings:
+  callbacks: ["corveil_litellm.handler"]
+  turn_off_message_logging: false

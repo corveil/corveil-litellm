@@ -1,0 +1,11 @@
+# Add these lines to your LiteLLM config.yaml, after `pip install corveil-litellm`
+# in the proxy's environment (or with corveil_litellm.py in the same folder as this file).
+
+litellm_settings:
+  callbacks: ["corveil_litellm.handler"]   # add to your existing list if you have one
+  turn_off_message_logging: false          # the callback needs the conversation text
+
+# Environment (set these where you run the proxy):
+#   CORVEIL_API_KEY=sk-citadel-...          # from People & Access → API Keys in Corveil
+#   CORVEIL_DRY_RUN=1                        # optional: log what would be sent, send nothing
+#   CORVEIL_TEAMS=platform,data              # optional: only these LiteLLM teams

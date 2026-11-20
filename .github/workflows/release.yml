@@ -1,0 +1,97 @@
+name: Release
+
+# Push a tag vX.Y.Z to publish corveil-litellm X.Y.Z to PyPI.
+#
+# PyPI trusts this workflow through a trusted publisher (OpenID Connect): the
+# project on PyPI names this repository, this workflow file (release.yml) and
+# the `pypi` environment. No PyPI token is stored anywhere.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: The tag, the code and the changelog agree
+        run: |
+          python - <<'EOF'
+          import os, re, pathlib, tomllib
+          tag = os.environ["GITHUB_REF_NAME"]
+          src = pathlib.Path("src/corveil_litellm/__init__.py").read_text()
+          version = re.search(r'^__version__ = "([^"]+)"$', src, re.M).group(1)
+          assert tag == f"v{version}", f"tag {tag} but __version__ is {version}"
+          assert f"corveil-litellm {version} (" in src, "the module docstring names another version"
+          heading = re.search(rf"^## {re.escape(version)}\b.*$", pathlib.Path("CHANGELOG.md").read_text(), re.M)
+          assert heading, f"CHANGELOG.md has no '## {version}' section"
+          assert "unreleased" not in heading.group(0).lower(), f"CHANGELOG.md still says: {heading.group(0)}"
+          compose = pathlib.Path("examples/docker-compose.example.yml").read_text()
+          assert re.findall(r"corveil-litellm==([\w.]+)", compose) == [version], "examples pin another version"
+          assert pathlib.Path("LICENSE").is_file(), "no LICENSE file"
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]
+          assert project.get("license"), "pyproject.toml has no license"
+          print(f"releasing {version}")
+          EOF
+      - run: python -m pip install build
+      - run: python -m build
+      - name: The single file, for people who don't use pip
+        run: mkdir -p single && cp src/corveil_litellm/__init__.py single/corveil_litellm.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: single-file
+          path: single/corveil_litellm.py
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/corveil-litellm/
+    permissions:
+      id-token: write  # the trusted publisher's OpenID Connect token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/download-artifact@v4
+        with:
+          name: single-file
+          path: single/
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## " v "( |$)" {on=1; next} /^## / {on=0} on' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* single/corveil_litellm.py \
+            --title "corveil-litellm $version" --notes-file notes.md --verify-tag

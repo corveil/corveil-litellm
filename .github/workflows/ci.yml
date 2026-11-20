@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"  # Mondays: catches a new LiteLLM release that breaks the callback
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest (litellm ${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest LiteLLM whose proxy imports an installed callback
+          # package. Keep in step with pyproject.toml and OLDEST_LITELLM in
+          # tests/test_callback.py.
+          - name: oldest (1.94.0)
+            python: "3.10"
+            litellm: "litellm==1.94.0"
+          - name: latest
+            python: "3.13"
+            litellm: "litellm"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: python -m pip install "${{ matrix.litellm }}" pytest .
+      - name: Versions
+        run: python -c "import importlib.metadata as m; print('litellm', m.version('litellm'), '| corveil-litellm', m.version('corveil-litellm'))"
+      - name: Test
+        run: python -m pytest -v -rs
+
+  package:
+    name: build and check the package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - name: The wheel holds the one module and nothing else
+        run: |
+          python - <<'EOF'
+          import glob, zipfile
+          whl, = glob.glob("dist/*.whl")
+          code = sorted(n for n in zipfile.ZipFile(whl).namelist() if ".dist-info/" not in n)
+          assert code == ["corveil_litellm/__init__.py"], code
+          print(whl, code)
+          EOF

@@ -1,0 +1,64 @@
+# End-to-end check: the LiteLLM proxy with corveil-litellm pip-installed sends
+# conversations to a stand-in Corveil. See README.md in this folder.
+#
+#   postgres       the proxy's database, for its virtual keys, users and teams
+#   fake-upstream  fake_upstream.py, a stand-in for the Anthropic and OpenAI APIs
+#   fake-corveil   fake_corveil.py, a stand-in for Corveil's upload endpoint
+#   litellm        the proxy image with the package installed (Dockerfile)
+
+name: corveil-litellm-e2e
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: litellm
+      POSTGRES_DB: litellm
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  fake-upstream:
+    image: python:3.12-alpine
+    command: ["python3", "/fake/fake_upstream.py"]
+    volumes:
+      - ./fake_upstream.py:/fake/fake_upstream.py:ro
+
+  fake-corveil:
+    image: python:3.12-alpine
+    command: ["python3", "/fake/fake_corveil.py"]
+    ports:
+      - "127.0.0.1:${E2E_FAKE_CORVEIL_PORT:-8010}:8000"
+    volumes:
+      - ./fake_corveil.py:/fake/fake_corveil.py:ro
+
+  litellm:
+    build:
+      context: .
+      args:
+        LITELLM_IMAGE: ${LITELLM_IMAGE:-ghcr.io/berriai/litellm:main-stable}
+        INSTALL: ${E2E_INSTALL:-/tmp/dist/*.whl}
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "127.0.0.1:${E2E_LITELLM_PORT:-4000}:4000"
+    environment:
+      DATABASE_URL: postgresql://litellm:litellm@postgres:5432/litellm
+      LITELLM_MASTER_KEY: sk-e2e-master
+      # The callback's settings, as a user would set them.
+      CORVEIL_API_KEY: ${CORVEIL_API_KEY:-sk-citadel-e2e}
+      CORVEIL_URL: ${CORVEIL_URL:-http://fake-corveil:8000}
+      CORVEIL_SESSION_IDLE_SECONDS: ${CORVEIL_SESSION_IDLE_SECONDS:-20}
+      CORVEIL_DRY_RUN: ${CORVEIL_DRY_RUN:-}
+      CORVEIL_LOG_LEVEL: ${CORVEIL_LOG_LEVEL:-INFO}
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fake-upstream:
+        condition: service_started
+      fake-corveil:
+        condition: service_started

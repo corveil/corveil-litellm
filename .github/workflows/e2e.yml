@@ -1,0 +1,48 @@
+name: End-to-end
+
+# The official LiteLLM proxy image with corveil-litellm pip-installed, sending
+# real proxy traffic to a stand-in Corveil. See e2e/README.md.
+
+on:
+  schedule:
+    - cron: "41 6 * * 1"  # Mondays, against the current stable LiteLLM image
+  workflow_dispatch:
+    inputs:
+      litellm_image:
+        description: LiteLLM proxy image to build on
+        default: ghcr.io/berriai/litellm:main-stable
+      install:
+        description: What to pip install. Empty builds this checkout; corveil-litellm==X.Y.Z checks a release on PyPI.
+        default: ""
+      corveil_url:
+        description: Send to this Corveil instead of the stand-in (uses the CORVEIL_E2E_API_KEY secret). Empty uses the stand-in.
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LITELLM_IMAGE: ${{ inputs.litellm_image || 'ghcr.io/berriai/litellm:main-stable' }}
+      E2E_INSTALL: ${{ inputs.install }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run
+        env:
+          CORVEIL_URL: ${{ inputs.corveil_url }}
+          CORVEIL_API_KEY: ${{ inputs.corveil_url && secrets.CORVEIL_E2E_API_KEY || '' }}
+        run: ./e2e/run.sh
+      - name: Proxy log
+        if: always()
+        working-directory: e2e
+        run: docker compose logs --no-color litellm fake-corveil | tail -200
+      - name: Clean up
+        if: always()
+        working-directory: e2e
+        run: docker compose down -v

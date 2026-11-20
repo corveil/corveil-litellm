@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "corveil-litellm"
+dynamic = ["version"]
+description = "LiteLLM proxy callback that sends each conversation to Corveil."
+readme = "README.md"
+requires-python = ">=3.10"
+# LICENSE: chosen by the maintainers before the first release. The release
+# workflow refuses to publish without a LICENSE file and a license field here.
+authors = [{ name = "Corveil, Inc." }]
+keywords = ["litellm", "callback", "corveil", "llm", "proxy", "observability"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: System :: Logging",
+]
+# Only what the callback imports. LiteLLM 1.94.0 is the first release whose
+# proxy imports `corveil_litellm.handler` from an installed package; earlier
+# ones only load a corveil_litellm.py that sits next to config.yaml.
+dependencies = [
+  "litellm>=1.94.0",
+  "httpx>=0.23",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.urls]
+Homepage = "https://github.com/corveil/corveil-litellm"
+Source = "https://github.com/corveil/corveil-litellm"
+Changelog = "https://github.com/corveil/corveil-litellm/blob/main/CHANGELOG.md"
+Issues = "https://github.com/corveil/corveil-litellm/issues"
+
+[tool.hatch.version]
+path = "src/corveil_litellm/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/corveil_litellm"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/corveil_litellm",
+  "tests",
+  "examples",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+filterwarnings = ["ignore::UserWarning", "ignore::DeprecationWarning"]

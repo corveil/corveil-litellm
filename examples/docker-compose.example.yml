@@ -1,0 +1,30 @@
+# Running the official LiteLLM image with corveil-litellm installed.
+# Only the marked lines are new compared to a standard setup.
+
+services:
+  litellm:
+    # new: the official image plus corveil-litellm. The image has no `pip`
+    # command, so ensurepip adds it to the image's own Python first.
+    build:
+      dockerfile_inline: |
+        FROM ghcr.io/berriai/litellm:main-stable
+        RUN python3 -m ensurepip && python3 -m pip install --no-cache-dir corveil-litellm==0.5.0
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "4000:4000"
+    environment:
+      CORVEIL_API_KEY: ${CORVEIL_API_KEY}            # new
+      # CORVEIL_DRY_RUN: "1"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+
+# Without pip (offline, or LiteLLM older than 1.94.0): keep `image:` instead of
+# `build:` and mount the single file next to config.yaml:
+#
+#    image: ghcr.io/berriai/litellm:main-stable
+#    volumes:
+#      - ./config.yaml:/app/config.yaml:ro
+#      - ./corveil_litellm.py:/app/corveil_litellm.py:ro
+#
+# Kubernetes / Helm: build the same image, or put corveil_litellm.py in the
+# same ConfigMap as config.yaml so both are mounted into the same directory.
