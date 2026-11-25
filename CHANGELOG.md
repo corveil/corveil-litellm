@@ -3,7 +3,7 @@
 All notable changes to corveil-litellm. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 0.5.0 - unreleased
+## 0.5.0 - 2026-11-25
 
 First release on PyPI: `pip install corveil-litellm`.
 
